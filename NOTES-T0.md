@@ -7,7 +7,7 @@
 - **Migration generated** for all four tables → `db/0000_*.sql` (NOT yet applied — needs a DB).
 - Netlify Blobs helper (`netlify/lib/blobs.ts`), shared types (`netlify/lib/types.ts` incl. `EnrichmentProvider`; `src/types.ts` for the frontend).
 - Health function at `GET /api/health` (`netlify/functions/health.ts`) — returns candidate row count.
-- `.env.example` with Firecrawl + optional GitHub token + AI Gateway notes.
+- `.env.example` with Tinyfish + optional GitHub token + AI Gateway notes.
 - ✅ `npm run typecheck` clean · ✅ `npm run build` green.
 
 ## TODO — you must run these (need interactive Netlify auth)

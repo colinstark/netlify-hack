@@ -3,13 +3,13 @@
 ## Done (automated)
 - **`netlify/functions/enrich-candidate-background.ts`** (`-background` → ≤15 min). Reads `{candidateId}`:
   - sets `status='enriching'`
-  - **website** → provider.fetchWebsite (Firecrawl)
+  - **website** → provider.fetchWebsite (Tinyfish by default; Firecrawl still available)
   - **github** (per URL) → `enrichGitHub` (official API)
   - **linkedin** (per URL) → provider.fetchLinkedIn, best-effort → `unavailable` when blocked
   - **files** → `extractFileText` from Blobs (PDF via unpdf, text/* decoded), saved to `candidate_files.extracted_text`
   - writes one `enrichment` row per source; isolated try/catch per source (one failure ≠ run failure)
   - sets `status='enriched'`, then fires the scoring trigger (T4, swallowed)
-- **Adapter**: `netlify/lib/enrichment/adapter.ts` (`getProvider()` via `ENRICHMENT_PROVIDER`) + `firecrawl.ts` (`FirecrawlProvider`).
+- **Adapter**: `netlify/lib/enrichment/adapter.ts` (`getProvider()` via `ENRICHMENT_PROVIDER`) + `tinyfish.ts` (`TinyfishProvider`), `brightdata.ts` (`BrightDataProvider` for LinkedIn/GitHub/Crunchbase datasets), and `firecrawl.ts` (`FirecrawlProvider` fallback).
 - **GitHub**: `github.ts` — token optional; `403/429` → row `unavailable` "GitHub rate-limited", never fails the run.
 - **Files**: `files.ts` — `unpdf` for PDFs; docx intentionally returns '' (later enhancement).
 - ✅ `npm run typecheck` clean (covers functions) · ✅ `npm run build` green.
@@ -20,11 +20,15 @@ the **summary is a trimmed page excerpt** here and the real inference is done by
 reads `enrichment.raw`). Keeps the adapter LLM-free and the responsibilities clean.
 
 ## Needs your keys / live env to verify
-- **Firecrawl**: set `FIRECRAWL_API_KEY` (Netlify env or local `.env`). Without it, website/LinkedIn rows
+- **Tinyfish**: set `TINYFISH_API_KEY` (Netlify env or local `.env`). Without it, website/LinkedIn rows
   come back `failed`/`unavailable` but the pipeline still completes → `enriched`.
+- **BrightData**: set `ENRICHMENT_PROVIDER=brightdata` and `BRIGHTDATA_API_KEY` to use BrightData for
+  LinkedIn and GitHub URL lookups while Tinyfish still handles the generic website crawl. Crunchbase also
+  requires `BRIGHTDATA_CRUNCHBASE_DATASET_ID`.
+- **Firecrawl fallback**: set `ENRICHMENT_PROVIDER=firecrawl` and `FIRECRAWL_API_KEY`.
 - GitHub works with no token (60/hr). Set `GITHUB_TOKEN` only for headroom.
 
-## Verify (after DB provisioned + Firecrawl key)
+## Verify (after DB provisioned + Tinyfish key)
 ```bash
 netlify dev
 # Create a candidate via /new with a real site + a github.com/<org-or-repo> URL + a small PDF.
@@ -42,4 +46,5 @@ Expect: a `website` row (ok if key set), `github` row(s) ok/unavailable, `linked
 `unpdf` bundles pdf.js; serverless bundlers occasionally trip on it (worker/asset resolution). It typechecks
 and builds, but the real check is a PDF extraction running under `netlify dev`/deploy. If it errors at runtime,
 fallback options: pin a pdf.js-legacy build, or move file extraction to a separate step. Secondary: the
-Firecrawl v1 response shape is assumed `data.data.markdown`; if their API differs, website rows fail gracefully.
+Tinyfish fetch response shape is assumed `{ results: [{ text }], errors: [] }`; if their API differs,
+website rows fail gracefully.

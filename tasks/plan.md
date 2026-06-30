@@ -6,7 +6,7 @@ A VC scout needs a tool to (1) **ingest** potential candidate companies/founders
 
 Hard constraint: **everything runs on Netlify primitives** wherever one exists. The only unavoidable external dependency is scraping — **Netlify has no scraping API** (confirmed), so company-site/LinkedIn enrichment goes through a third party behind a pluggable adapter. GitHub uses the official GitHub API (no scraping).
 
-**Decisions (from user):** Auth = Netlify Identity · Scope = small team, shared candidate pool · Enrichment = Firecrawl + pluggable adapter (LinkedIn best-effort) · Frontend = Vite React SPA.
+**Decisions (from user):** Auth = Netlify Identity · Scope = small team, shared candidate pool · Enrichment = Tinyfish + pluggable adapter (LinkedIn best-effort) · Frontend = Vite React SPA.
 
 ## Netlify primitive → responsibility map
 
@@ -20,7 +20,7 @@ Hard constraint: **everything runs on Netlify primitives** wherever one exists. 
 | Crawl + score pipeline | **Background Functions** (up to 15 min) | long-running enrich + score |
 | Scoring LLM | **AI Gateway** | Anthropic SDK; `ANTHROPIC_API_KEY`/`ANTHROPIC_BASE_URL` auto-injected, billed via Netlify credits |
 | Language switch | **Edge Function** | geo/`Accept-Language` → de/en/es |
-| Website/LinkedIn enrichment | **External (Firecrawl)** behind adapter | not a Netlify feature |
+| Website/LinkedIn enrichment | **External (Tinyfish)** behind adapter | not a Netlify feature |
 
 ## Architecture / data flow
 
@@ -30,7 +30,7 @@ Hard constraint: **everything runs on Netlify primitives** wherever one exists. 
                        upload files ─► Blobs, then fire background fn
                                             │
                        [enrich-candidate-background] (≤15m):
-                         • website  → Firecrawl adapter
+                         • website  → Tinyfish adapter
                          • github   → GitHub REST/GraphQL (repos, collaborators, activity)
                          • linkedin → adapter (best-effort, may no-op)
                          • files    → read from Blobs, extract text
@@ -56,10 +56,12 @@ interface EnrichmentProvider {
   fetchLinkedIn(url): Promise<{ raw; summary } | null>; // null = unsupported/blocked
 }
 ```
-- `FirecrawlProvider` — implements `fetchWebsite` (markdown/structured), `fetchLinkedIn` best-effort.
+- `TinyfishProvider` — implements `fetchWebsite` (markdown/structured), `fetchLinkedIn` best-effort.
+- `BrightDataProvider` — uses BrightData datasets for LinkedIn, GitHub repository, and Crunchbase URLs; delegates generic website crawling to Tinyfish.
+- `FirecrawlProvider` remains available as a fallback adapter.
 - GitHub is its own module (`github.ts`) using official API — not part of the scrape adapter.
 - **LinkedIn risk noted:** anti-bot + ToS; treat as best-effort, never block the pipeline on it, surface "LinkedIn unavailable" in the report.
-- Provider chosen via env var so TinyFish/Linkup can be dropped in later.
+- Provider chosen via env var so other crawlers can be dropped in later.
 
 ## Scoring
 
@@ -80,7 +82,7 @@ interface EnrichmentProvider {
 /netlify/functions     candidates.ts (CRUD), enrich-candidate-background.ts
 /netlify/edge-functions i18n.ts
 /netlify/lib           db (drizzle schema/client), auth.ts, blobs.ts,
-                       enrichment/ (adapter, firecrawl, github, files),
+                       enrichment/ (adapter, tinyfish, firecrawl, github, files),
                        scoring.ts, scoring-prompt.ts
 /db                    drizzle migrations
 ```
@@ -92,7 +94,7 @@ interface EnrichmentProvider {
 > Sequence: **T0 first.** Then T1/T2/T6 can run in parallel. T3→T4→T5 are a chain. Each task starts by reading this plan file.
 
 ### T0 — Foundation & scaffold  *(blocks everything)*
-Vite React + TS SPA; `netlify.toml`; provision **Netlify DB**; Drizzle schema + first migration for all four tables; Netlify Blobs helper; shared TS types (`Candidate`, `Enrichment`, `Score`, adapter interface); `netlify dev` runs locally; env var scaffolding (Firecrawl key, provider selector). **Deliverable:** empty app boots, DB migrated, `netlify dev` green.
+Vite React + TS SPA; `netlify.toml`; provision **Netlify DB**; Drizzle schema + first migration for all four tables; Netlify Blobs helper; shared TS types (`Candidate`, `Enrichment`, `Score`, adapter interface); `netlify dev` runs locally; env var scaffolding (Tinyfish key, provider selector). **Deliverable:** empty app boots, DB migrated, `netlify dev` green.
 
 ### T1 — Auth (Netlify Identity)  *(needs T0)*
 Identity widget in React; login/logout; gate app routes; `netlify/lib/auth.ts` helper that reads `context.clientContext` and rejects unauthenticated function calls. **Deliverable:** unauthenticated users hit a login gate; functions reject anonymous calls.
@@ -101,7 +103,7 @@ Identity widget in React; login/logout; gate app routes; `netlify/lib/auth.ts` h
 "New candidate" form (title, project URL, repeatable LinkedIn/GitHub URL fields, notes, file upload). `POST /candidates` sync function: validate, write row (`status=pending`), stream files → Blobs + `candidate_files` rows, then invoke the enrichment background function. List view of candidates with live status. **Deliverable:** submitting the form creates a candidate + files and kicks off the pipeline.
 
 ### T3 — Enrichment pipeline  *(needs T2)*
-`enrich-candidate-background.ts`: orchestrate website (Firecrawl adapter) + GitHub API (repos, collaborators, contribution/activity) + LinkedIn (best-effort) + file text extraction; write `enrichment` rows; update `status`. Implement adapter interface + `FirecrawlProvider` + `github.ts`. Resilient: one source failing doesn't fail the whole run. **Deliverable:** a submitted candidate reaches `status=enriched` with populated `enrichment` rows.
+`enrich-candidate-background.ts`: orchestrate website (Tinyfish adapter) + GitHub API (repos, collaborators, contribution/activity) + LinkedIn (best-effort) + file text extraction; write `enrichment` rows; update `status`. Implement adapter interface + `TinyfishProvider` + `github.ts`. Resilient: one source failing doesn't fail the whole run. **Deliverable:** a submitted candidate reaches `status=enriched` with populated `enrichment` rows.
 
 ### T4 — Scoring (AI Gateway)  *(needs T3)*
 `scoring.ts` + versioned `scoring-prompt.ts`; call Anthropic via AI Gateway with enrichment as input; parse/validate strict-JSON result; write `scores` row; `status=scored`. Chain from end of T3 (or standalone re-score endpoint). **Deliverable:** enriched candidate gets a numeric score + structured rationale.

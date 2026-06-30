@@ -14,7 +14,7 @@ Stand up the empty Netlify-native project skeleton: Vite React SPA + Netlify con
 - **Schema + migration** for all four tables exactly as specified in the plan: `candidates`, `candidate_files`, `enrichment`, `scores`. Generate and apply the first migration to `/db`.
 - **Blobs helper** in `netlify/lib/blobs.ts` (get store, put/get/delete by key).
 - **Shared types** (`netlify/lib/types.ts` or `src/types.ts` shared): `Candidate`, `CandidateFile`, `Enrichment`, `Score`, and the `EnrichmentProvider` interface from the plan.
-- **Env scaffolding**: `.env.example` with `FIRECRAWL_API_KEY`, `ENRICHMENT_PROVIDER` (default `firecrawl`), and an **optional** `GITHUB_TOKEN` (commented out — GitHub works unauthenticated at 60 req/hr/IP; token only needed for headroom). Document that AI Gateway injects `ANTHROPIC_*` automatically.
+- **Env scaffolding**: `.env.example` with `TINYFISH_API_KEY`, `ENRICHMENT_PROVIDER` (default `tinyfish`), and an **optional** `GITHUB_TOKEN` (commented out — GitHub works unauthenticated at 60 req/hr/IP; token only needed for headroom). Document that AI Gateway injects `ANTHROPIC_*` automatically.
 
 ## Acceptance
 - `netlify dev` boots the SPA with no errors and functions load.

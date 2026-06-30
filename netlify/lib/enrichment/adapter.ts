@@ -1,5 +1,7 @@
 import type { EnrichmentProvider } from '../types';
+import { BrightDataProvider } from './brightdata';
 import { FirecrawlProvider } from './firecrawl';
+import { TinyfishProvider } from './tinyfish';
 
 /**
  * Returns the configured enrichment provider. Swap via ENRICHMENT_PROVIDER
@@ -7,10 +9,15 @@ import { FirecrawlProvider } from './firecrawl';
  * and get wired in here. GitHub is handled separately (github.ts), not via this.
  */
 export function getProvider(): EnrichmentProvider {
-  const name = (process.env.ENRICHMENT_PROVIDER ?? 'firecrawl').toLowerCase();
+  const name = (process.env.ENRICHMENT_PROVIDER ?? 'tinyfish').toLowerCase();
   switch (name) {
+    case 'brightdata':
+      return new BrightDataProvider();
+    case 'tinyfish':
+      return new TinyfishProvider();
     case 'firecrawl':
-    default:
       return new FirecrawlProvider();
+    default:
+      throw new Error(`Unknown ENRICHMENT_PROVIDER: ${name}`);
   }
 }
