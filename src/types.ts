@@ -9,6 +9,8 @@ export type CandidateStatus =
   | 'scored'
   | 'failed';
 
+export type EnrichmentSourceType = 'website' | 'github' | 'linkedin' | 'crunchbase' | 'file';
+export type EnrichmentStatus = 'pending' | 'ok' | 'failed' | 'unavailable';
 export type Sentiment = '+' | '-';
 
 export interface RationaleItem {
@@ -24,8 +26,10 @@ export interface Candidate {
   projectUrl: string | null;
   linkedinUrls: string[];
   githubUrls: string[];
+  crunchbaseUrls: string[];
   notes: string | null;
   status: CandidateStatus;
+  error: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -38,4 +42,38 @@ export interface Score {
   promptVersion: string | null;
   rationale: RationaleItem[] | null;
   createdAt: string;
+}
+
+/** Candidate row with its latest score attached (GET /api/candidates list response). */
+export type CandidateListItem = Candidate & { latestScore: Score | null };
+
+export interface Enrichment {
+  id: string;
+  candidateId: string;
+  sourceType: EnrichmentSourceType;
+  raw: unknown;
+  summary: string | null;
+  status: EnrichmentStatus;
+  error: string | null;
+  fetchedAt: string;
+}
+
+export interface CandidateFile {
+  id: string;
+  candidateId: string;
+  blobKey: string;
+  filename: string;
+  contentType: string | null;
+  size: number | null;
+  extractedText: string | null;
+  createdAt: string;
+}
+
+/** Composite returned by GET /api/candidates/:id. */
+export interface CandidateReport {
+  candidate: Candidate;
+  latestScore: Score | null;
+  scoreHistory: Score[];
+  enrichment: Enrichment[];
+  files: CandidateFile[];
 }

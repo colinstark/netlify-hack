@@ -92,13 +92,25 @@ export default async (req: Request, _context: Context) => {
     }
 
     for (const url of candidate.githubUrls) {
-      await runSource(candidateId, 'github', async () => enrichGitHub(url));
+      await runSource(candidateId, 'github', async () => {
+        const r = await provider.fetchGitHub?.(url);
+        if (r) return { raw: r.raw, summary: r.summary, status: 'ok' };
+        return enrichGitHub(url);
+      });
     }
 
     for (const url of candidate.linkedinUrls) {
       await runSource(candidateId, 'linkedin', async () => {
         const r = await provider.fetchLinkedIn(url);
         if (!r) return { raw: { url }, summary: 'LinkedIn unavailable', status: 'unavailable' };
+        return { raw: r.raw, summary: r.summary, status: 'ok' };
+      });
+    }
+
+    for (const url of candidate.crunchbaseUrls) {
+      await runSource(candidateId, 'crunchbase', async () => {
+        const r = await provider.fetchCrunchbase?.(url);
+        if (!r) return { raw: { url }, summary: 'Crunchbase unavailable', status: 'unavailable' };
         return { raw: r.raw, summary: r.summary, status: 'ok' };
       });
     }

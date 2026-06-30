@@ -1,7 +1,7 @@
 import type { Config, Handler, HandlerEvent } from '@netlify/functions';
-import { desc, eq } from 'drizzle-orm';
+import { asc, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '../lib/db';
-import { candidates, candidateFiles } from '../lib/db/schema';
+import { candidates, candidateFiles, enrichment, scores } from '../lib/db/schema';
 import { requireUser, UnauthorizedError, unauthorizedResponse } from '../lib/auth';
 import { putCandidateFile, fileBlobKey } from '../lib/blobs';
 import { triggerEnrichment } from '../lib/enrichment/trigger';
@@ -18,6 +18,7 @@ interface CreateCandidateBody {
   projectUrl?: string;
   linkedinUrls?: string[];
   githubUrls?: string[];
+  crunchbaseUrls?: string[];
   notes?: string;
   files?: UploadedFile[];
 }
@@ -46,14 +47,47 @@ function base64ToArrayBuffer(b64: string): ArrayBuffer {
 }
 
 async function listCandidates() {
-  const rows = await db.select().from(candidates).orderBy(desc(candidates.createdAt));
-  return json(200, rows);
+  const candidateRows = await db.select().from(candidates).orderBy(desc(candidates.createdAt));
+  if (candidateRows.length === 0) return json(200, []);
+
+  // Keep this compatible with the Drizzle version in the project by querying
+  // relevant scores and taking the first newest row per candidate in memory.
+  const latestScores = await db
+    .select()
+    .from(scores)
+    .where(inArray(scores.candidateId, candidateRows.map((c) => c.id)))
+    .orderBy(desc(scores.createdAt));
+
+  const scoreByCandidate = new Map<(typeof latestScores)[number]['candidateId'], (typeof latestScores)[number]>();
+  for (const score of latestScores) {
+    if (!scoreByCandidate.has(score.candidateId)) {
+      scoreByCandidate.set(score.candidateId, score);
+    }
+  }
+  return json(
+    200,
+    candidateRows.map((c) => ({ ...c, latestScore: scoreByCandidate.get(c.id) ?? null })),
+  );
 }
 
-async function getCandidate(id: string) {
-  const rows = await db.select().from(candidates).where(eq(candidates.id, id)).limit(1);
-  if (rows.length === 0) return json(404, { error: 'Candidate not found' });
-  return json(200, rows[0]);
+/** Composite report: candidate + latest score + history + enrichment + files. */
+async function getCandidateReport(id: string) {
+  const [candidate] = await db.select().from(candidates).where(eq(candidates.id, id)).limit(1);
+  if (!candidate) return json(404, { error: 'Candidate not found' });
+
+  const [enrichmentRows, fileRows, scoreRows] = await Promise.all([
+    db.select().from(enrichment).where(eq(enrichment.candidateId, id)).orderBy(asc(enrichment.fetchedAt)),
+    db.select().from(candidateFiles).where(eq(candidateFiles.candidateId, id)).orderBy(asc(candidateFiles.createdAt)),
+    db.select().from(scores).where(eq(scores.candidateId, id)).orderBy(desc(scores.createdAt)),
+  ]);
+
+  return json(200, {
+    candidate,
+    latestScore: scoreRows[0] ?? null,
+    scoreHistory: scoreRows,
+    enrichment: enrichmentRows,
+    files: fileRows,
+  });
 }
 
 async function createCandidate(event: HandlerEvent, createdBy: string) {
@@ -74,6 +108,7 @@ async function createCandidate(event: HandlerEvent, createdBy: string) {
       projectUrl: body.projectUrl?.trim() || null,
       linkedinUrls: cleanUrls(body.linkedinUrls),
       githubUrls: cleanUrls(body.githubUrls),
+      crunchbaseUrls: cleanUrls(body.crunchbaseUrls),
       notes: body.notes?.trim() || null,
       createdBy,
       status: 'pending',
@@ -137,7 +172,7 @@ export const handler: Handler = async (event, context) => {
     const rescoreMatch = event.path.match(/\/candidates\/([^/]+)\/rescore\/?$/);
     const idMatch = event.path.match(/\/candidates\/([^/]+)\/?$/);
     if (event.httpMethod === 'POST' && rescoreMatch) return await rescoreCandidate(event, rescoreMatch[1]);
-    if (event.httpMethod === 'GET' && idMatch) return await getCandidate(idMatch[1]);
+    if (event.httpMethod === 'GET' && idMatch) return await getCandidateReport(idMatch[1]);
     if (event.httpMethod === 'GET') return await listCandidates();
     if (event.httpMethod === 'POST') return await createCandidate(event, user.sub);
     return json(405, { error: 'Method not allowed' });

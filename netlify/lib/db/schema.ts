@@ -18,7 +18,7 @@ export const candidateStatus = pgEnum('candidate_status', [
   'failed',
 ]);
 
-export const sourceType = pgEnum('source_type', ['website', 'github', 'linkedin', 'file']);
+export const sourceType = pgEnum('source_type', ['website', 'github', 'linkedin', 'crunchbase', 'file']);
 
 export const enrichmentStatus = pgEnum('enrichment_status', [
   'pending',
@@ -33,6 +33,7 @@ export const candidates = pgTable('candidates', {
   projectUrl: text('project_url'),
   linkedinUrls: jsonb('linkedin_urls').$type<string[]>().default([]).notNull(),
   githubUrls: jsonb('github_urls').$type<string[]>().default([]).notNull(),
+  crunchbaseUrls: jsonb('crunchbase_urls').$type<string[]>().default([]).notNull(),
   notes: text('notes'),
   // Netlify Identity `sub` of the scout who created the row (shared pool — informational).
   createdBy: text('created_by'),

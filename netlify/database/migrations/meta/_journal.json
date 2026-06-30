@@ -8,6 +8,13 @@
       "when": 1782842590698,
       "tag": "0000_cuddly_meteorite",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1782846000000,
+      "tag": "0001_brightdata_sources",
+      "breakpoints": true
     }
   ]
 }

@@ -62,6 +62,7 @@ export default function NewCandidate() {
   const [projectUrl, setProjectUrl] = useState('');
   const [linkedinUrls, setLinkedinUrls] = useState<string[]>([]);
   const [githubUrls, setGithubUrls] = useState<string[]>([]);
+  const [crunchbaseUrls, setCrunchbaseUrls] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -88,6 +89,7 @@ export default function NewCandidate() {
           projectUrl,
           linkedinUrls,
           githubUrls,
+          crunchbaseUrls,
           notes,
           files: encoded,
         }),
@@ -141,6 +143,14 @@ export default function NewCandidate() {
           addLabel={t('form.addAnother')}
           urls={githubUrls}
           onChange={setGithubUrls}
+        />
+        <UrlList
+          label={t('form.crunchbaseUrls')}
+          placeholder={t('form.phCrunchbase')}
+          removeLabel={t('form.remove')}
+          addLabel={t('form.addAnother')}
+          urls={crunchbaseUrls}
+          onChange={setCrunchbaseUrls}
         />
 
         <label className="field">

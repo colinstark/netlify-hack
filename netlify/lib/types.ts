@@ -18,7 +18,16 @@ export type CandidateFile = InferSelectModel<typeof candidateFiles>;
 export type Enrichment = InferSelectModel<typeof enrichment>;
 export type Score = InferSelectModel<typeof scores>;
 
-export type EnrichmentSourceType = 'website' | 'github' | 'linkedin' | 'file';
+export type EnrichmentSourceType = 'website' | 'github' | 'linkedin' | 'crunchbase' | 'file';
+
+/** Composite returned by GET /api/candidates/:id — everything the report UI needs. */
+export interface CandidateReport {
+  candidate: Candidate;
+  latestScore: Score | null;
+  scoreHistory: Score[];
+  enrichment: Enrichment[];
+  files: CandidateFile[];
+}
 
 export interface EnrichmentResult {
   /** Provider-native payload, stored verbatim in enrichment.raw. */
@@ -36,4 +45,8 @@ export interface EnrichmentProvider {
   fetchWebsite(url: string): Promise<EnrichmentResult>;
   /** Best-effort. Returns null when LinkedIn is blocked/unsupported. */
   fetchLinkedIn(url: string): Promise<EnrichmentResult | null>;
+  /** Optional structured provider for GitHub repository URLs. */
+  fetchGitHub?(url: string): Promise<EnrichmentResult | null>;
+  /** Optional structured provider for Crunchbase URLs. */
+  fetchCrunchbase?(url: string): Promise<EnrichmentResult | null>;
 }
