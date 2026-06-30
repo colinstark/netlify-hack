@@ -28,6 +28,7 @@ export default function CandidateList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sort, setSort] = useState<SortKey>('newest');
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -61,6 +62,30 @@ export default function CandidateList() {
 
   const sorted = sortCandidates(candidates, sort);
 
+  async function deleteCandidate(candidate: CandidateListItem): Promise<void> {
+    if (deletingIds.has(candidate.id)) return;
+    if (!window.confirm(t('list.deleteConfirm'))) return;
+
+    setError(null);
+    setDeletingIds((prev) => new Set(prev).add(candidate.id));
+    try {
+      const res = await apiFetch(`/api/candidates/${candidate.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `${t('list.deleteFailed')} (${res.status})`);
+      }
+      setCandidates((prev) => prev.filter((c) => c.id !== candidate.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(candidate.id);
+        return next;
+      });
+    }
+  }
+
   return (
     <section className="page">
       <div className="page-head">
@@ -91,17 +116,27 @@ export default function CandidateList() {
           <ul className="candidate-list">
             {sorted.map((c) => (
               <li key={c.id}>
-                <Link to={`/candidate/${c.id}`} className="candidate-row">
-                  <span className="candidate-title">{c.title}</span>
-                  <div className="candidate-meta">
-                    {c.latestScore && (
-                      <span className={`score-pill score-${tier(c.latestScore.score)}`}>{c.latestScore.score}</span>
-                    )}
-                    <span className={`badge badge-${ACTIVE.has(c.status) ? 'active' : c.status}`}>
-                      {t(`status.${c.status}` as TranslationKey)}
-                    </span>
-                  </div>
-                </Link>
+                <div className="candidate-row">
+                  <Link to={`/candidate/${c.id}`} className="candidate-main">
+                    <span className="candidate-title">{c.title}</span>
+                    <div className="candidate-meta">
+                      {c.latestScore && (
+                        <span className={`score-pill score-${tier(c.latestScore.score)}`}>{c.latestScore.score}</span>
+                      )}
+                      <span className={`badge badge-${ACTIVE.has(c.status) ? 'active' : c.status}`}>
+                        {t(`status.${c.status}` as TranslationKey)}
+                      </span>
+                    </div>
+                  </Link>
+                  <button
+                    type="button"
+                    className="linkbtn danger-btn"
+                    disabled={deletingIds.has(c.id)}
+                    onClick={() => void deleteCandidate(c)}
+                  >
+                    {deletingIds.has(c.id) ? t('list.deleting') : t('list.delete')}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

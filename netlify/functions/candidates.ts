@@ -3,7 +3,7 @@ import { asc, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '../lib/db';
 import { candidates, candidateFiles, enrichment, scores } from '../lib/db/schema';
 import type { IdentityUser } from '../lib/auth';
-import { putCandidateFile, fileBlobKey } from '../lib/blobs';
+import { putCandidateFile, deleteCandidateFile, fileBlobKey } from '../lib/blobs';
 import { triggerEnrichment } from '../lib/enrichment/trigger';
 
 interface UploadedFile {
@@ -220,6 +220,21 @@ async function rescoreCandidate(req: Request, id: string) {
   return json(202, { status: 'scoring' });
 }
 
+async function deleteCandidate(id: string) {
+  const [candidate] = await db.select().from(candidates).where(eq(candidates.id, id)).limit(1);
+  if (!candidate) return json(404, { error: 'Candidate not found' });
+
+  const fileRows = await db
+    .select({ blobKey: candidateFiles.blobKey })
+    .from(candidateFiles)
+    .where(eq(candidateFiles.candidateId, id));
+
+  await db.delete(candidates).where(eq(candidates.id, id));
+
+  await Promise.allSettled(fileRows.map((file) => deleteCandidateFile(file.blobKey)));
+  return json(200, { deleted: true });
+}
+
 export default async (req: Request, _context: Context) => {
   let user: IdentityUser;
   try {
@@ -236,6 +251,7 @@ export default async (req: Request, _context: Context) => {
     const rescoreMatch = path.match(/\/candidates\/([^/]+)\/rescore\/?$/);
     const idMatch = path.match(/\/candidates\/([^/]+)\/?$/);
     if (req.method === 'POST' && rescoreMatch) return toResponse(await rescoreCandidate(req, rescoreMatch[1]));
+    if (req.method === 'DELETE' && idMatch) return toResponse(await deleteCandidate(idMatch[1]));
     if (req.method === 'GET' && idMatch) return toResponse(await getCandidateReport(idMatch[1]));
     if (req.method === 'GET') return toResponse(await listCandidates());
     if (req.method === 'POST') return toResponse(await createCandidate(req, user.sub));
