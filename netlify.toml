@@ -1,0 +1,17 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# Edge functions live in netlify/edge-functions (Netlify's default location).
+# The i18n edge function is added in task T6.
+
+# SPA fallback: client-side routes resolve to index.html.
+# Function routes (e.g. /api/*) and /.netlify/* take precedence over this.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
