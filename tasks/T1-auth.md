@@ -1,6 +1,6 @@
 # T1 — Auth (Netlify Identity)
 
-**Read first:** `~/.claude/plans/i-want-to-build-hashed-tulip.md`. **Depends on:** T0 (scaffold + DB must exist).
+**Read first:** `tasks/plan.md`. **Depends on:** T0 (scaffold + DB must exist).
 
 ## Goal
 Add Netlify Identity login to the SPA and a function-side auth guard. Small shared team: any logged-in user can see/score the shared candidate pool.

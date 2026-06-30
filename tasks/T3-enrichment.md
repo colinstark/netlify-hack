@@ -1,6 +1,6 @@
 # T3 — Enrichment pipeline
 
-**Read first:** `~/.claude/plans/i-want-to-build-hashed-tulip.md`. **Depends on:** T2 (candidates + files + invoke exist).
+**Read first:** `tasks/plan.md`. **Depends on:** T2 (candidates + files + invoke exist).
 
 ## Goal
 Implement the background function that enriches a candidate from all sources and writes `enrichment` rows, advancing `status`.

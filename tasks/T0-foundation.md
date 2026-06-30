@@ -1,6 +1,6 @@
 # T0 — Foundation & scaffold
 
-**Read first:** `~/.claude/plans/i-want-to-build-hashed-tulip.md` (full architecture, data model, file layout).
+**Read first:** `tasks/plan.md` (full architecture, data model, file layout).
 
 **This task blocks all others. Nothing else can start until this is green.**
 

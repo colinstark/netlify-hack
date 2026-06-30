@@ -1,6 +1,6 @@
 # T2 — Input form + ingest
 
-**Read first:** `~/.claude/plans/i-want-to-build-hashed-tulip.md`. **Depends on:** T0. **Auth-gate the function once T1 lands** (use `netlify/lib/auth.ts`).
+**Read first:** `tasks/plan.md`. **Depends on:** T0. **Auth-gate the function once T1 lands** (use `netlify/lib/auth.ts`).
 
 ## Goal
 Let a scout submit a candidate, persist it + any files, and kick off the enrichment pipeline.

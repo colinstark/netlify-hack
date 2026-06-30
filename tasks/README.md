@@ -2,7 +2,7 @@
 
 Each `T*.md` file in this folder is a **self-contained prompt** you can paste into a fresh Claude Code session. They all reference the approved plan at:
 
-`~/.claude/plans/i-want-to-build-hashed-tulip.md`
+`tasks/plan.md`
 
 ## Order & dependencies
 

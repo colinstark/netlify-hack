@@ -1,6 +1,6 @@
 # T5 — Report & dashboard UI
 
-**Read first:** `~/.claude/plans/i-want-to-build-hashed-tulip.md`. **Depends on:** T4 (scores exist).
+**Read first:** `tasks/plan.md`. **Depends on:** T4 (scores exist).
 
 ## Goal
 Surface the full candidate report and a sortable dashboard.

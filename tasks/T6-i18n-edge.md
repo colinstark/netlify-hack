@@ -1,6 +1,6 @@
 # T6 — i18n edge function + catalogs
 
-**Read first:** `~/.claude/plans/i-want-to-build-hashed-tulip.md`. **Depends on:** T0 only (independent of the pipeline — can run in parallel with T1–T5).
+**Read first:** `tasks/plan.md`. **Depends on:** T0 only (independent of the pipeline — can run in parallel with T1–T5).
 
 ## Goal
 Auto-switch UI language between **German, English, Spanish** via a Netlify Edge Function, with a manual override.

@@ -1,6 +1,6 @@
 # T4 — Scoring (Netlify AI Gateway)
 
-**Read first:** `~/.claude/plans/i-want-to-build-hashed-tulip.md`. **Depends on:** T3 (enriched data exists).
+**Read first:** `tasks/plan.md`. **Depends on:** T3 (enriched data exists).
 
 ## Goal
 Score an enriched candidate 0–100 with a structured, reason-by-reason rationale, using the Anthropic SDK through Netlify AI Gateway.
