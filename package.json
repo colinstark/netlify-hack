@@ -19,7 +19,8 @@
     "netlify-identity-widget": "^2.0.3",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-router-dom": "^7.18.1"
+    "react-router-dom": "^7.18.1",
+    "unpdf": "^1.6.2"
   },
   "devDependencies": {
     "@types/netlify-identity-widget": "^1.9.7",
