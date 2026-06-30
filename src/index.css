@@ -237,3 +237,36 @@ code {
   border-radius: 4px;
   padding: 0.1rem 0.35rem;
 }
+
+/* Language switcher */
+.lang-switch {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-left: 0.25rem;
+}
+
+.lang-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.lang-btn:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+.lang-btn-active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.gate-lang {
+  margin-top: 1.25rem;
+  display: flex;
+  justify-content: center;
+}

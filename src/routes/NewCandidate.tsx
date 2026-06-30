@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../api';
+import { useI18n } from '../i18n';
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -15,11 +16,15 @@ function fileToBase64(file: File): Promise<string> {
 function UrlList({
   label,
   placeholder,
+  removeLabel,
+  addLabel,
   urls,
   onChange,
 }: {
   label: string;
   placeholder: string;
+  removeLabel: string;
+  addLabel: string;
   urls: string[];
   onChange: (next: string[]) => void;
 }) {
@@ -39,12 +44,12 @@ function UrlList({
             onChange={(e) => set(i, e.target.value)}
           />
           <button type="button" className="linkbtn" onClick={() => remove(i)}>
-            Remove
+            {removeLabel}
           </button>
         </div>
       ))}
       <button type="button" className="linkbtn" onClick={add}>
-        + Add {label.toLowerCase()}
+        {addLabel}
       </button>
     </fieldset>
   );
@@ -52,6 +57,7 @@ function UrlList({
 
 export default function NewCandidate() {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [title, setTitle] = useState('');
   const [projectUrl, setProjectUrl] = useState('');
   const [linkedinUrls, setLinkedinUrls] = useState<string[]>([]);
@@ -101,43 +107,49 @@ export default function NewCandidate() {
 
   return (
     <section className="page">
-      <h1>New candidate</h1>
+      <h1>{t('form.heading')}</h1>
       <form className="form" onSubmit={onSubmit}>
         <label className="field">
-          <span>Title *</span>
+          <span>
+            {t('form.titleLabel')} *
+          </span>
           <input value={title} onChange={(e) => setTitle(e.target.value)} required />
         </label>
 
         <label className="field">
-          <span>Project URL</span>
+          <span>{t('form.projectUrl')}</span>
           <input
             type="url"
-            placeholder="https://example.com"
+            placeholder={t('form.phProjectUrl')}
             value={projectUrl}
             onChange={(e) => setProjectUrl(e.target.value)}
           />
         </label>
 
         <UrlList
-          label="LinkedIn URLs"
-          placeholder="https://linkedin.com/in/…"
+          label={t('form.linkedinUrls')}
+          placeholder={t('form.phLinkedin')}
+          removeLabel={t('form.remove')}
+          addLabel={t('form.addAnother')}
           urls={linkedinUrls}
           onChange={setLinkedinUrls}
         />
         <UrlList
-          label="GitHub URLs"
-          placeholder="https://github.com/…"
+          label={t('form.githubUrls')}
+          placeholder={t('form.phGithub')}
+          removeLabel={t('form.remove')}
+          addLabel={t('form.addAnother')}
           urls={githubUrls}
           onChange={setGithubUrls}
         />
 
         <label className="field">
-          <span>Notes</span>
+          <span>{t('form.notes')}</span>
           <textarea rows={4} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </label>
 
         <label className="field">
-          <span>Files (PDF / docs)</span>
+          <span>{t('form.files')}</span>
           <input
             type="file"
             multiple
@@ -148,7 +160,7 @@ export default function NewCandidate() {
         {error && <p className="error">{error}</p>}
 
         <button type="submit" className="btn" disabled={submitting}>
-          {submitting ? 'Submitting…' : 'Create candidate'}
+          {submitting ? t('form.submitting') : t('form.create')}
         </button>
       </form>
     </section>

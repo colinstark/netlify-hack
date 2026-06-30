@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiFetch } from '../api';
+import { useI18n, type TranslationKey } from '../i18n';
 import type { Candidate } from '../types';
 
 const ACTIVE = new Set(['pending', 'enriching', 'enriched', 'scoring']);
 
 export default function CandidateList() {
+  const { t } = useI18n();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,19 +40,19 @@ export default function CandidateList() {
     };
   }, []);
 
-  if (loading) return <section className="page"><h1>Candidates</h1><p className="placeholder">Loading…</p></section>;
+  if (loading) return <section className="page"><h1>{t('common.candidates')}</h1><p className="placeholder">{t('common.loading')}</p></section>;
 
   return (
     <section className="page">
       <div className="page-head">
-        <h1>Candidates</h1>
-        <Link to="/new" className="btn">New candidate</Link>
+        <h1>{t('common.candidates')}</h1>
+        <Link to="/new" className="btn">{t('common.newCandidate')}</Link>
       </div>
 
       {error && <p className="error">{error}</p>}
 
       {candidates.length === 0 ? (
-        <p className="placeholder">No candidates yet. Add one to start scoring.</p>
+        <p className="placeholder">{t('list.empty')}</p>
       ) : (
         <ul className="candidate-list">
           {candidates.map((c) => (
@@ -58,7 +60,7 @@ export default function CandidateList() {
               <Link to={`/candidate/${c.id}`} className="candidate-row">
                 <span className="candidate-title">{c.title}</span>
                 <span className={`badge badge-${ACTIVE.has(c.status) ? 'active' : c.status}`}>
-                  {c.status}
+                  {t(`status.${c.status}` as TranslationKey)}
                 </span>
               </Link>
             </li>

@@ -12,7 +12,7 @@ Auto-switch UI language between **German, English, Spanish** via a Netlify Edge 
 - **Language switcher** in the UI that sets the `lang` cookie and re-renders.
 
 ## Acceptance
-- Changing `Accept-Language` (or the `lang` cookie) renders the app in de/en/es.
-- Manual switcher overrides detection and persists across reloads.
-- Default falls back to English.
-- Project gate green.
+- [x] Changing `Accept-Language` (or the `lang` cookie) renders the app in de/en/es.
+- [x] Manual switcher overrides detection and persists across reloads.
+- [x] Default falls back to English.
+- [x] Project gate green.
