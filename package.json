@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "rm -rf dist && vite",
     "start": "netlify dev",
     "build": "vite build",
     "preview": "vite preview",
@@ -13,7 +13,6 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.108.0",
     "@neondatabase/serverless": "^1.1.0",
     "@netlify/blobs": "^10.7.9",
     "@netlify/database": "^1.1.0",
