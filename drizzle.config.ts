@@ -1,12 +1,12 @@
 import { defineConfig } from 'drizzle-kit';
 
 export default defineConfig({
-  schema: './netlify/lib/db/schema.ts',
-  out: './db',
   dialect: 'postgresql',
+  // Our real schema (the netlify db init sample at db/schema.ts is removed).
+  schema: './netlify/lib/db/schema.ts',
+  out: './netlify/database/migrations',
   dbCredentials: {
-    // Netlify injects NETLIFY_DATABASE_URL once the DB is provisioned/linked.
-    // DATABASE_URL is read as a fallback for local dev.
+    // Netlify injects NETLIFY_DATABASE_URL; DATABASE_URL is a local fallback.
     url: process.env.NETLIFY_DATABASE_URL ?? process.env.DATABASE_URL ?? '',
   },
 });

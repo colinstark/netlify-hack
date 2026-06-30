@@ -1,0 +1,3 @@
+# SPA fallback for production: unmatched routes serve index.html (client-side routing).
+# Real files (/assets/*) and function routes (/api/*, /.netlify/*) take precedence.
+/*    /index.html    200

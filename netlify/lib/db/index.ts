@@ -1,17 +1,20 @@
-import { neon } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-http';
+import { getDatabase } from '@netlify/database';
+import { drizzle as drizzleServerless } from 'drizzle-orm/neon-serverless';
+import { drizzle as drizzleServer, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from './schema';
 
-const connectionString = process.env.NETLIFY_DATABASE_URL ?? process.env.DATABASE_URL;
+/**
+ * @netlify/database resolves the right connection for the environment:
+ * a local Postgres pool (`driver: 'server'`) under `netlify dev`, or a Neon
+ * serverless pool (`driver: 'serverless'`) when deployed. We wrap whichever it
+ * returns in the matching Drizzle adapter. The query API is identical, so we
+ * expose a single `NodePgDatabase`-typed handle to callers.
+ */
+const connection = getDatabase();
 
-if (!connectionString) {
-  throw new Error(
-    'Database connection string missing. Set NETLIFY_DATABASE_URL (auto-injected by Netlify ' +
-      'once the DB is provisioned) or DATABASE_URL for local dev. See NOTES-T0.md.',
-  );
-}
+export const db: NodePgDatabase<typeof schema> =
+  connection.driver === 'serverless'
+    ? (drizzleServerless(connection.pool, { schema }) as unknown as NodePgDatabase<typeof schema>)
+    : drizzleServer(connection.pool, { schema });
 
-const sql = neon(connectionString);
-
-export const db = drizzle(sql, { schema });
 export { schema };

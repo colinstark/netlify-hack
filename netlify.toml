@@ -6,12 +6,17 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
-# Edge functions live in netlify/edge-functions (Netlify's default location).
-# The i18n edge function is added in task T6.
+# Local dev: run the Vite dev server and let Netlify Dev proxy it (on :8888)
+# alongside functions + edge functions. Start everything with `netlify dev`.
+[dev]
+  command = "npm run dev"
+  targetPort = 5173
 
-# SPA fallback: client-side routes resolve to index.html.
-# Function routes (e.g. /api/*) and /.netlify/* take precedence over this.
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+# Edge functions live in netlify/edge-functions (Netlify's default location).
+# i18n locale detection (T6) is configured inline in netlify/edge-functions/i18n.ts
+# via its `config` export (path: "/*", excludedPath: ["/api/*", "/.netlify/*"]).
+# It seeds a `lang` cookie from Accept-Language / geo on the first document request.
+
+# SPA fallback lives in public/_redirects (copied into dist/ at build), NOT here:
+# a /* -> /index.html rule in netlify.toml is applied pre-proxy and rewrites Vite's
+# dev module requests (/src/*, /@vite/client) to HTML, breaking `netlify dev`.
