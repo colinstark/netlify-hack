@@ -1,9 +1,70 @@
-/** Dashboard / candidate list. Implemented in T2 (list) and T5 (sortable dashboard). */
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { apiFetch } from '../api';
+import type { Candidate } from '../types';
+
+const ACTIVE = new Set(['pending', 'enriching', 'enriched', 'scoring']);
+
 export default function CandidateList() {
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const res = await apiFetch('/api/candidates');
+        if (!res.ok) throw new Error(`Failed to load (${res.status})`);
+        const data: Candidate[] = await res.json();
+        if (!cancelled) {
+          setCandidates(data);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    // Poll while anything is still being processed.
+    const timer = setInterval(load, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  if (loading) return <section className="page"><h1>Candidates</h1><p className="placeholder">Loading…</p></section>;
+
   return (
     <section className="page">
-      <h1>Candidates</h1>
-      <p className="placeholder">The candidate dashboard is wired up in tasks T2 and T5.</p>
+      <div className="page-head">
+        <h1>Candidates</h1>
+        <Link to="/new" className="btn">New candidate</Link>
+      </div>
+
+      {error && <p className="error">{error}</p>}
+
+      {candidates.length === 0 ? (
+        <p className="placeholder">No candidates yet. Add one to start scoring.</p>
+      ) : (
+        <ul className="candidate-list">
+          {candidates.map((c) => (
+            <li key={c.id}>
+              <Link to={`/candidate/${c.id}`} className="candidate-row">
+                <span className="candidate-title">{c.title}</span>
+                <span className={`badge badge-${ACTIVE.has(c.status) ? 'active' : c.status}`}>
+                  {c.status}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
