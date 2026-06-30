@@ -5,8 +5,9 @@
   positive/negative factor rubric; instructs strict-JSON output `{score, rationale:[{factor,sentiment,weight,detail}]}`.
 - **`netlify/lib/scoring.ts`** — `scoreCandidate(id)`:
   - sets `status='scoring'`, builds a prompt from the candidate + `enrichment` rows
-  - calls Anthropic via the SDK (`new Anthropic()` → AI-Gateway-injected key/base-url on deploy),
-    model `claude-opus-4-8` (override `ANTHROPIC_MODEL`), adaptive thinking
+  - calls OpenAI via Netlify AI Gateway's OpenAI-compatible REST endpoint using the
+    Gateway-injected `OPENAI_API_KEY` + `OPENAI_BASE_URL`; model `gpt-5.5`
+    (override `OPENAI_MODEL`)
   - `parseScoreJson()` defensively extracts/validates the JSON (strips fences, clamps score 0-100,
     normalizes rationale); handles `stop_reason: 'refusal'`
   - inserts a new `scores` row, sets `status='scored'`; on failure → `status='failed'` + error
@@ -16,11 +17,11 @@
   background fn; each run inserts a fresh `scores` row (history preserved).
 - ✅ `npm run typecheck` clean · ✅ `npm run build` green.
 
-## Needs AI Gateway (deploy) or a local key to run
-- **Deployed:** enable **AI Gateway** on the Netlify project — it injects `ANTHROPIC_API_KEY` +
-  `ANTHROPIC_BASE_URL`, billed via Netlify credits. Nothing else to configure.
-- **Local (`netlify dev`):** the Gateway isn't injected locally, so set your own `ANTHROPIC_API_KEY`
-  in `.env` to test scoring against the Anthropic API directly.
+## Needs AI Gateway to run
+- **Deployed:** enable **AI Gateway** on the Netlify project — it injects `OPENAI_API_KEY` +
+  `OPENAI_BASE_URL`, billed via Netlify credits. No project-owned OpenAI key is required.
+- **Local (`netlify dev`):** use Netlify Dev against a deploy with AI Gateway available, or expect
+  scoring to fail clearly with a missing `OPENAI_*` Gateway env error.
 
 ## Verify (after DB + enrichment working, and a key/Gateway available)
 ```bash

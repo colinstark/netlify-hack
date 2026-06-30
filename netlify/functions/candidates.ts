@@ -131,8 +131,18 @@ async function createCandidate(event: HandlerEvent, createdBy: string) {
     });
   }
 
-  // Kick off enrichment (T3). Non-blocking for ingest success.
-  await triggerEnrichment(candidate.id, baseUrl(event));
+  // Kick off enrichment (T3). Ingest still succeeds, but a trigger failure is
+  // recorded immediately so the row never sits in `pending` indefinitely.
+  try {
+    await triggerEnrichment(candidate.id, baseUrl(event));
+  } catch (error) {
+    const message = String(error);
+    await db
+      .update(candidates)
+      .set({ status: 'failed', error: message, updatedAt: new Date() })
+      .where(eq(candidates.id, candidate.id));
+    return json(201, { ...candidate, status: 'failed', error: message });
+  }
 
   return json(201, candidate);
 }
@@ -148,13 +158,22 @@ async function rescoreCandidate(event: HandlerEvent, id: string) {
 
   // Fire-and-forget the scoring background function (keeps a fresh scores-row history).
   try {
-    await fetch(`${baseUrl(event)}/.netlify/functions/score-candidate-background`, {
+    const res = await fetch(`${baseUrl(event)}/.netlify/functions/score-candidate-background`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ candidateId: id }),
     });
-  } catch {
-    // Background fn unavailable — status stays `scoring`; surfaced in the UI.
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Scoring trigger failed (${res.status}): ${body.slice(0, 500)}`);
+    }
+  } catch (error) {
+    const message = String(error);
+    await db
+      .update(candidates)
+      .set({ status: 'failed', error: message, updatedAt: new Date() })
+      .where(eq(candidates.id, id));
+    return json(502, { error: message });
   }
   return json(202, { status: 'scoring' });
 }

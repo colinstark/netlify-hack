@@ -50,16 +50,16 @@ function baseUrl(req: Request): string {
   return process.env.URL ?? new URL(req.url).origin;
 }
 
-/** Fire-and-forget scoring trigger (T4). Swallowed so enrichment completes regardless. */
+/** Fire-and-forget scoring trigger (T4). Surfaces enqueue failures to the caller. */
 async function triggerScoring(candidateId: string, base: string): Promise<void> {
-  try {
-    await fetch(`${base}/.netlify/functions/score-candidate-background`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ candidateId }),
-    });
-  } catch {
-    // T4 not deployed yet — leave the candidate at `enriched`.
+  const res = await fetch(`${base}/.netlify/functions/score-candidate-background`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ candidateId }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Scoring trigger failed (${res.status}): ${body.slice(0, 500)}`);
   }
 }
 

@@ -242,8 +242,12 @@ export function parseScoreJson(text: string): ScoreResult {
   return { score, rationale };
 }
 
-function openAiBaseUrl(): string {
-  return (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, '');
+function openAiGatewayUrl(): string {
+  const base = process.env.OPENAI_BASE_URL?.replace(/\/$/, '');
+  if (!base) {
+    throw new Error('OPENAI_BASE_URL is not set; enable Netlify AI Gateway for this deploy.');
+  }
+  return `${base}${base.endsWith('/v1') ? '' : '/v1'}/chat/completions`;
 }
 
 function contentToText(content: unknown): string {
@@ -261,9 +265,11 @@ function contentToText(content: unknown): string {
 
 async function createScoringCompletion(userPrompt: string): Promise<string> {
   const key = process.env.OPENAI_API_KEY;
-  if (!key) throw new Error('OPENAI_API_KEY is not set');
+  if (!key) {
+    throw new Error('OPENAI_API_KEY is not set; enable Netlify AI Gateway for this deploy.');
+  }
 
-  const res = await fetch(`${openAiBaseUrl()}/chat/completions`, {
+  const res = await fetch(openAiGatewayUrl(), {
     method: 'POST',
     headers: {
       authorization: `Bearer ${key}`,
@@ -300,10 +306,10 @@ async function createScoringCompletion(userPrompt: string): Promise<string> {
 }
 
 /**
- * Score one enriched candidate via the OpenAI-compatible API / Netlify AI Gateway
- * (OPENAI_API_KEY / OPENAI_BASE_URL are injected at runtime when deployed;
- * set OPENAI_API_KEY locally to test). Writes a new `scores` row and advances
- * the candidate to `scored`. Throws on failure (caller records `failed`).
+ * Score one enriched candidate via Netlify AI Gateway's OpenAI-compatible
+ * endpoint. Netlify injects OPENAI_API_KEY and OPENAI_BASE_URL when AI Gateway
+ * is enabled for the deploy. Writes a new `scores` row and advances the
+ * candidate to `scored`. Throws on failure (caller records `failed`).
  */
 export async function scoreCandidate(candidateId: string): Promise<void> {
   const [candidate] = await db
