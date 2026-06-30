@@ -1,8 +1,8 @@
-import type { Config, Handler, HandlerEvent } from '@netlify/functions';
+import type { Config, Context } from '@netlify/functions';
 import { asc, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '../lib/db';
 import { candidates, candidateFiles, enrichment, scores } from '../lib/db/schema';
-import { requireUser, UnauthorizedError, unauthorizedResponse } from '../lib/auth';
+import type { IdentityUser } from '../lib/auth';
 import { putCandidateFile, fileBlobKey } from '../lib/blobs';
 import { triggerEnrichment } from '../lib/enrichment/trigger';
 
@@ -24,26 +24,68 @@ interface CreateCandidateBody {
 }
 
 const json = (statusCode: number, body: unknown) => ({
-  statusCode,
+  status: statusCode,
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify(body),
 });
+
+class UnauthorizedError extends Error {
+  constructor(message = 'Authentication required') {
+    super(message);
+    this.name = 'UnauthorizedError';
+  }
+}
 
 function cleanUrls(urls: unknown): string[] {
   if (!Array.isArray(urls)) return [];
   return urls.map((u) => String(u).trim()).filter((u) => u.length > 0);
 }
 
-function baseUrl(event: HandlerEvent): string {
+function toResponse(response: ReturnType<typeof json>): Response {
+  return new Response(response.body, {
+    status: response.status,
+    headers: response.headers,
+  });
+}
+
+function baseUrl(req: Request): string {
   if (process.env.URL) return process.env.URL;
-  const proto = (event.headers['x-forwarded-proto'] as string | undefined) ?? 'https';
-  const host = event.headers.host ?? 'localhost:8888';
-  return `${proto}://${host}`;
+  return new URL(req.url).origin;
 }
 
 function base64ToArrayBuffer(b64: string): ArrayBuffer {
   const buf = Buffer.from(b64, 'base64');
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+}
+
+async function requireUser(req: Request): Promise<IdentityUser> {
+  const authorization = req.headers.get('authorization');
+  if (!authorization?.toLowerCase().startsWith('bearer ')) {
+    throw new UnauthorizedError();
+  }
+
+  const res = await fetch(`${baseUrl(req)}/.netlify/identity/user`, {
+    headers: { authorization },
+  });
+  if (!res.ok) throw new UnauthorizedError();
+
+  const data = (await res.json()) as Record<string, unknown>;
+  const sub = typeof data.sub === 'string' ? data.sub : typeof data.id === 'string' ? data.id : '';
+  if (!sub) throw new UnauthorizedError();
+
+  return {
+    ...data,
+    sub,
+    email: typeof data.email === 'string' ? data.email : undefined,
+    app_metadata:
+      data.app_metadata && typeof data.app_metadata === 'object'
+        ? (data.app_metadata as IdentityUser['app_metadata'])
+        : undefined,
+    user_metadata:
+      data.user_metadata && typeof data.user_metadata === 'object'
+        ? (data.user_metadata as IdentityUser['user_metadata'])
+        : undefined,
+  };
 }
 
 async function listCandidates() {
@@ -90,10 +132,10 @@ async function getCandidateReport(id: string) {
   });
 }
 
-async function createCandidate(event: HandlerEvent, createdBy: string) {
+async function createCandidate(req: Request, createdBy: string) {
   let body: CreateCandidateBody;
   try {
-    body = JSON.parse(event.body ?? '{}');
+    body = await req.json();
   } catch {
     return json(400, { error: 'Invalid JSON body' });
   }
@@ -134,7 +176,7 @@ async function createCandidate(event: HandlerEvent, createdBy: string) {
   // Kick off enrichment (T3). Ingest still succeeds, but a trigger failure is
   // recorded immediately so the row never sits in `pending` indefinitely.
   try {
-    await triggerEnrichment(candidate.id, baseUrl(event));
+    await triggerEnrichment(candidate.id, baseUrl(req));
   } catch (error) {
     const message = String(error);
     await db
@@ -147,7 +189,7 @@ async function createCandidate(event: HandlerEvent, createdBy: string) {
   return json(201, candidate);
 }
 
-async function rescoreCandidate(event: HandlerEvent, id: string) {
+async function rescoreCandidate(req: Request, id: string) {
   const rows = await db.select().from(candidates).where(eq(candidates.id, id)).limit(1);
   if (rows.length === 0) return json(404, { error: 'Candidate not found' });
 
@@ -158,7 +200,7 @@ async function rescoreCandidate(event: HandlerEvent, id: string) {
 
   // Fire-and-forget the scoring background function (keeps a fresh scores-row history).
   try {
-    const res = await fetch(`${baseUrl(event)}/.netlify/functions/score-candidate-background`, {
+    const res = await fetch(`${baseUrl(req)}/.netlify/functions/score-candidate-background`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ candidateId: id }),
@@ -178,25 +220,28 @@ async function rescoreCandidate(event: HandlerEvent, id: string) {
   return json(202, { status: 'scoring' });
 }
 
-export const handler: Handler = async (event, context) => {
-  let user;
+export default async (req: Request, _context: Context) => {
+  let user: IdentityUser;
   try {
-    user = requireUser(context);
+    user = await requireUser(req);
   } catch (error) {
-    if (error instanceof UnauthorizedError) return unauthorizedResponse();
+    if (error instanceof UnauthorizedError) {
+      return toResponse(json(401, { error: error.message }));
+    }
     throw error;
   }
 
   try {
-    const rescoreMatch = event.path.match(/\/candidates\/([^/]+)\/rescore\/?$/);
-    const idMatch = event.path.match(/\/candidates\/([^/]+)\/?$/);
-    if (event.httpMethod === 'POST' && rescoreMatch) return await rescoreCandidate(event, rescoreMatch[1]);
-    if (event.httpMethod === 'GET' && idMatch) return await getCandidateReport(idMatch[1]);
-    if (event.httpMethod === 'GET') return await listCandidates();
-    if (event.httpMethod === 'POST') return await createCandidate(event, user.sub);
-    return json(405, { error: 'Method not allowed' });
+    const path = new URL(req.url).pathname;
+    const rescoreMatch = path.match(/\/candidates\/([^/]+)\/rescore\/?$/);
+    const idMatch = path.match(/\/candidates\/([^/]+)\/?$/);
+    if (req.method === 'POST' && rescoreMatch) return toResponse(await rescoreCandidate(req, rescoreMatch[1]));
+    if (req.method === 'GET' && idMatch) return toResponse(await getCandidateReport(idMatch[1]));
+    if (req.method === 'GET') return toResponse(await listCandidates());
+    if (req.method === 'POST') return toResponse(await createCandidate(req, user.sub));
+    return toResponse(json(405, { error: 'Method not allowed' }));
   } catch (error) {
-    return json(500, { error: String(error) });
+    return toResponse(json(500, { error: String(error) }));
   }
 };
 
