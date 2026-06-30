@@ -102,6 +102,28 @@ async function createCandidate(event: HandlerEvent, createdBy: string) {
   return json(201, candidate);
 }
 
+async function rescoreCandidate(event: HandlerEvent, id: string) {
+  const rows = await db.select().from(candidates).where(eq(candidates.id, id)).limit(1);
+  if (rows.length === 0) return json(404, { error: 'Candidate not found' });
+
+  await db
+    .update(candidates)
+    .set({ status: 'scoring', updatedAt: new Date() })
+    .where(eq(candidates.id, id));
+
+  // Fire-and-forget the scoring background function (keeps a fresh scores-row history).
+  try {
+    await fetch(`${baseUrl(event)}/.netlify/functions/score-candidate-background`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ candidateId: id }),
+    });
+  } catch {
+    // Background fn unavailable — status stays `scoring`; surfaced in the UI.
+  }
+  return json(202, { status: 'scoring' });
+}
+
 export const handler: Handler = async (event, context) => {
   let user;
   try {
@@ -112,7 +134,9 @@ export const handler: Handler = async (event, context) => {
   }
 
   try {
+    const rescoreMatch = event.path.match(/\/candidates\/([^/]+)\/rescore\/?$/);
     const idMatch = event.path.match(/\/candidates\/([^/]+)\/?$/);
+    if (event.httpMethod === 'POST' && rescoreMatch) return await rescoreCandidate(event, rescoreMatch[1]);
     if (event.httpMethod === 'GET' && idMatch) return await getCandidate(idMatch[1]);
     if (event.httpMethod === 'GET') return await listCandidates();
     if (event.httpMethod === 'POST') return await createCandidate(event, user.sub);
@@ -122,4 +146,6 @@ export const handler: Handler = async (event, context) => {
   }
 };
 
-export const config: Config = { path: ['/api/candidates', '/api/candidates/:id'] };
+export const config: Config = {
+  path: ['/api/candidates', '/api/candidates/:id', '/api/candidates/:id/rescore'],
+};
