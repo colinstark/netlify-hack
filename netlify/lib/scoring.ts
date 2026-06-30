@@ -1,17 +1,26 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { eq } from 'drizzle-orm';
 import { db } from './db';
 import { candidates, enrichment, scores } from './db/schema';
 import { PROMPT_VERSION, SYSTEM_PROMPT } from './scoring-prompt';
 import type { Candidate, Enrichment, RationaleItem, Sentiment } from './types';
 
-// Defaults to the latest, most capable Claude model; overridable per-deploy.
-const MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-8';
+// Overridable per-deploy; defaults to gpt-5.5.
+const MODEL = process.env.OPENAI_MODEL ?? 'gpt-5.5';
 const MAX_RAW_CHARS = 4000;
+const MAX_RATIONALE_DETAIL_CHARS = 700;
 
 interface ScoreResult {
   score: number;
   rationale: RationaleItem[];
+}
+
+interface ChatCompletionResponse {
+  choices?: Array<{
+    message?: {
+      content?: unknown;
+      refusal?: string | null;
+    };
+  }>;
 }
 
 function buildUserPrompt(candidate: Candidate, rows: Enrichment[]): string {
@@ -20,6 +29,7 @@ function buildUserPrompt(candidate: Candidate, rows: Enrichment[]): string {
     candidate.projectUrl ? `Website: ${candidate.projectUrl}` : '',
     candidate.linkedinUrls.length ? `LinkedIn: ${candidate.linkedinUrls.join(', ')}` : '',
     candidate.githubUrls.length ? `GitHub: ${candidate.githubUrls.join(', ')}` : '',
+    candidate.crunchbaseUrls.length ? `Crunchbase: ${candidate.crunchbaseUrls.join(', ')}` : '',
     candidate.notes ? `Scout notes: ${candidate.notes}` : '',
     '',
     '# Enrichment data',
@@ -52,29 +62,247 @@ function normalizeRationale(item: unknown): RationaleItem | null {
   return { factor, sentiment, weight, detail };
 }
 
-/** Defensively extract the scoring JSON from the model's text output. */
-export function parseScoreJson(text: string): ScoreResult {
+function clampScore(score: number): number {
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function truncate(text: string, max = MAX_RATIONALE_DETAIL_CHARS): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (clean.length <= max) return clean;
+  return `${clean.slice(0, max - 1).trim()}...`;
+}
+
+function scoreFromValue(value: unknown, keyHint = ''): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return clampScore(value <= 10 && /score|composite|final|overall/i.test(keyHint) ? value * 10 : value);
+  }
+  if (typeof value !== 'string') return null;
+
+  const percent = value.match(/(-?\d+(?:\.\d+)?)\s*%/);
+  if (percent) return clampScore(Number(percent[1]));
+
+  const ratio = value.match(/(-?\d+(?:\.\d+)?)\s*\/\s*(10|100)\b/);
+  if (ratio) {
+    const n = Number(ratio[1]);
+    const denom = Number(ratio[2]);
+    return clampScore(denom === 10 ? n * 10 : n);
+  }
+
+  const numeric = value.match(/(?:score|composite|final|overall|banded)[^\d-]*(-?\d+(?:\.\d+)?)/i);
+  if (!numeric) return null;
+  const n = Number(numeric[1]);
+  return clampScore(n <= 10 ? n * 10 : n);
+}
+
+function scoreFromObject(obj: Record<string, unknown>): number | null {
+  const preferred = [
+    'score',
+    'final_score',
+    'finalScore',
+    'overall_score',
+    'overallScore',
+    'composite_score',
+    'compositeScore',
+    'banded_score',
+    'bandedScore',
+    'investment_score',
+    'investmentScore',
+  ];
+
+  for (const key of preferred) {
+    if (key in obj) {
+      const score = scoreFromValue(obj[key], key);
+      if (score != null) return score;
+    }
+  }
+
+  for (const [key, value] of Object.entries(obj)) {
+    if (!/score|composite|final|overall|banded/i.test(key)) continue;
+    const score = scoreFromValue(value, key);
+    if (score != null) return score;
+  }
+  return null;
+}
+
+function extractJsonObject(text: string): Record<string, unknown> | null {
   let t = text.trim();
   const fenced = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fenced) t = fenced[1].trim();
   const start = t.indexOf('{');
   const end = t.lastIndexOf('}');
-  if (start === -1 || end <= start) throw new Error('No JSON object found in model output');
+  if (start === -1 || end <= start) return null;
 
-  const parsed = JSON.parse(t.slice(start, end + 1)) as Record<string, unknown>;
-  const scoreNum = Math.round(Number(parsed.score));
-  if (!Number.isFinite(scoreNum)) throw new Error('Model output missing a numeric score');
-  const score = Math.max(0, Math.min(100, scoreNum));
+  try {
+    return JSON.parse(t.slice(start, end + 1)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function scoreFromText(text: string): number | null {
+  const patterns = [
+    /(?:final|overall|composite|banded|investment|company)\s+score[^\d-]{0,40}(-?\d+(?:\.\d+)?)\s*\/\s*(10|100)\b/i,
+    /(?:final|overall|composite|banded|investment|company)\s+score[^\d-]{0,40}(-?\d+(?:\.\d+)?)\s*%/i,
+    /(?:final|overall|composite|banded|investment|company)\s+score[^\d-]{0,40}(-?\d+(?:\.\d+)?)/i,
+    /\bscore[^\d-]{0,30}(-?\d+(?:\.\d+)?)\s*\/\s*(10|100)\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    const n = Number(match[1]);
+    const denom = match[2] ? Number(match[2]) : undefined;
+    return clampScore(denom === 10 || (!denom && n <= 10) ? n * 10 : n);
+  }
+  return null;
+}
+
+function linesAfterHeading(text: string, headingPattern: RegExp, limit: number): string[] {
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((line) => headingPattern.test(line));
+  if (start === -1) return [];
+
+  const out: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^#{1,6}\s+\S/.test(line) && out.length > 0) break;
+    const cleaned = line.replace(/^[-*•\d.)\s]+/, '').trim();
+    if (cleaned.length < 8) continue;
+    out.push(cleaned);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function rationaleFromReport(text: string, score: number): RationaleItem[] {
+  const items: RationaleItem[] = [];
+
+  for (const line of linesAfterHeading(text, /red flags/i, 3)) {
+    items.push({ factor: 'Red flag', sentiment: '-', weight: 8, detail: truncate(line) });
+  }
+
+  for (const line of linesAfterHeading(text, /data gaps|acquisition plan/i, 2)) {
+    items.push({ factor: 'Data gap', sentiment: '-', weight: 6, detail: truncate(line) });
+  }
+
+  for (const line of linesAfterHeading(text, /durability|market|competition|economics|team|regulatory|runway/i, 4)) {
+    if (items.length >= 8) break;
+    const negative = /\b(risk|weak|red|veto|no|undisclosed|unpriced|onerous|dependency|gap)\b/i.test(line);
+    items.push({
+      factor: negative ? 'Risk' : 'Verdict',
+      sentiment: negative ? '-' : '+',
+      weight: negative ? 6 : 5,
+      detail: truncate(line),
+    });
+  }
+
+  if (items.length === 0) {
+    const firstParagraph = text
+      .split(/\n\s*\n/)
+      .map((p) => p.trim())
+      .find((p) => p.length > 40);
+    items.push({
+      factor: 'Model report',
+      sentiment: score >= 60 ? '+' : '-',
+      weight: 5,
+      detail: truncate(firstParagraph ?? text),
+    });
+  }
+
+  return items;
+}
+
+/** Defensively extract scoring data from either legacy JSON or report-style model output. */
+export function parseScoreOutput(text: string): ScoreResult {
+  const parsed = extractJsonObject(text);
+  if (parsed) {
+    const score = scoreFromObject(parsed);
+    if (score == null) throw new Error('Model JSON output missing a numeric score');
+    const rationale = Array.isArray(parsed.rationale)
+      ? parsed.rationale.map(normalizeRationale).filter((r): r is RationaleItem => r !== null)
+      : [];
+    return { score, rationale: rationale.length > 0 ? rationale : rationaleFromReport(text, score) };
+  }
+
+  const score = scoreFromText(text);
+  if (score == null) {
+    throw new Error('Model output missing a parseable score. Include a final/composite score like "Final score: 72/100".');
+  }
+  return { score, rationale: rationaleFromReport(text, score) };
+}
+
+/** @deprecated use parseScoreOutput; kept as a compatibility export for older tests. */
+export function parseScoreJson(text: string): ScoreResult {
+  const parsed = extractJsonObject(text);
+  if (!parsed) throw new Error('No JSON object found in model output');
+  const score = scoreFromObject(parsed);
+  if (score == null) throw new Error('Model output missing a numeric score');
   const rationale = Array.isArray(parsed.rationale)
     ? parsed.rationale.map(normalizeRationale).filter((r): r is RationaleItem => r !== null)
     : [];
   return { score, rationale };
 }
 
+function openAiBaseUrl(): string {
+  return (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, '');
+}
+
+function contentToText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((part) => {
+      if (!part || typeof part !== 'object') return '';
+      const p = part as Record<string, unknown>;
+      return typeof p.text === 'string' ? p.text : '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+async function createScoringCompletion(userPrompt: string): Promise<string> {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) throw new Error('OPENAI_API_KEY is not set');
+
+  const res = await fetch(`${openAiBaseUrl()}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${key}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt },
+      ],
+      response_format: { type: 'json_object' },
+      max_completion_tokens: 8000,
+    }),
+  });
+
+  const body = await res.text();
+  if (!res.ok) throw new Error(`OpenAI ${res.status}: ${body.slice(0, 500)}`);
+
+  let data: ChatCompletionResponse;
+  try {
+    data = JSON.parse(body) as ChatCompletionResponse;
+  } catch {
+    throw new Error(`OpenAI returned invalid JSON: ${body.slice(0, 500)}`);
+  }
+
+  const message = data.choices?.[0]?.message;
+  if (!message) throw new Error('Empty response from model');
+  if (message.refusal) throw new Error(`Model refused to score this candidate: ${message.refusal}`);
+
+  const text = contentToText(message.content);
+  if (!text.trim()) throw new Error('Model returned an empty scoring response');
+  return text;
+}
+
 /**
- * Score one enriched candidate via the Anthropic SDK through Netlify AI Gateway
- * (ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL are injected at runtime when deployed;
- * set ANTHROPIC_API_KEY locally to test). Writes a new `scores` row and advances
+ * Score one enriched candidate via the OpenAI-compatible API / Netlify AI Gateway
+ * (OPENAI_API_KEY / OPENAI_BASE_URL are injected at runtime when deployed;
+ * set OPENAI_API_KEY locally to test). Writes a new `scores` row and advances
  * the candidate to `scored`. Throws on failure (caller records `failed`).
  */
 export async function scoreCandidate(candidateId: string): Promise<void> {
@@ -92,24 +320,8 @@ export async function scoreCandidate(candidateId: string): Promise<void> {
 
   try {
     const rows = await db.select().from(enrichment).where(eq(enrichment.candidateId, candidateId));
-    const client = new Anthropic();
-    const message = await client.messages.create({
-      model: MODEL,
-      max_tokens: 8000,
-      thinking: { type: 'adaptive' },
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: buildUserPrompt(candidate, rows) }],
-    });
-
-    if (message.stop_reason === 'refusal') {
-      throw new Error('Model refused to score this candidate');
-    }
-
-    const text = message.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('\n');
-    const result = parseScoreJson(text);
+    const text = await createScoringCompletion(buildUserPrompt(candidate, rows));
+    const result = parseScoreOutput(text);
 
     await db.insert(scores).values({
       candidateId,
