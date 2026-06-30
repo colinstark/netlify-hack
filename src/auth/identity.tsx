@@ -23,8 +23,17 @@ interface AuthValue {
 
 const AuthContext = createContext<AuthValue | undefined>(undefined);
 
+// Initialise the widget exactly once across the app's lifetime. The `init`
+// event is one-shot, so React StrictMode's double-mount (setup → cleanup →
+// setup) would otherwise consume it on the discarded mount and leave the live
+// one stuck on `ready=false`. We guard init() and derive readiness from
+// currentUser() instead of depending on the event firing.
+let identityInitialised = false;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<IdentityUser | null>(null);
+  const [user, setUser] = useState<IdentityUser | null>(() =>
+    netlifyIdentity.currentUser(),
+  );
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -41,7 +50,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     netlifyIdentity.on('init', onInit);
     netlifyIdentity.on('login', onLogin);
     netlifyIdentity.on('logout', onLogout);
-    netlifyIdentity.init();
+
+    if (!identityInitialised) {
+      identityInitialised = true;
+      netlifyIdentity.init();
+    }
+
+    // The widget restores any persisted session synchronously, so this is
+    // reliable even if the one-shot `init` event was already spent.
+    setUser(netlifyIdentity.currentUser());
+    setReady(true);
 
     return () => {
       netlifyIdentity.off('init', onInit);
