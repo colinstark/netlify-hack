@@ -5,8 +5,9 @@ import { TinyfishProvider } from './tinyfish';
 
 /**
  * Returns the configured enrichment provider. Swap via ENRICHMENT_PROVIDER
- * (firecrawl | tinyfish | linkup | ...). New providers implement EnrichmentProvider
- * and get wired in here. GitHub is handled separately (github.ts), not via this.
+ * (firecrawl | tinyfish | brightdata | ...). New providers implement
+ * EnrichmentProvider and get wired in here. GitHub falls back to the official
+ * API when the selected provider does not implement fetchGitHub.
  */
 export function getProvider(): EnrichmentProvider {
   const name = (process.env.ENRICHMENT_PROVIDER ?? 'tinyfish').toLowerCase();

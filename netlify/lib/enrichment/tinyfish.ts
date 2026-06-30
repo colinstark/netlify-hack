@@ -79,6 +79,13 @@ export class TinyfishProvider implements EnrichmentProvider {
     }
   }
 
+  async fetchGitHub(url: string): Promise<EnrichmentResult | null> {
+    const result = await this.fetchMarkdown(url);
+    const markdown = resultText(result);
+    if (!markdown) return null;
+    return { raw: { ...result, markdown }, summary: summarize(markdown) };
+  }
+
   private async fetchMarkdown(url: string): Promise<TinyfishFetchResult> {
     if (!this.key) throw new Error('TINYFISH_API_KEY is not set');
 
